@@ -1,4 +1,4 @@
-import { PlacementRule } from 'src/shared/types/placement-rule.type';
+import { PlacementRule } from 'src/shared/types/placementRule/placement-rule.type';
 
 export const noTerrain: PlacementRule = (constellation, map) => {
   const hasTerrain = constellation.some(

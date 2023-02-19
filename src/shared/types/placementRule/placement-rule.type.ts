@@ -1,5 +1,5 @@
-import { Coordinate } from './coordinate.type';
-import { MatchRich } from './match-rich.type';
+import { Coordinate } from '../coordinate.type';
+import { MatchRich } from '../database/match/match-rich.type';
 
 export type PlacementRule = (
   constellation: Coordinate[],

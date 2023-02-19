@@ -1,9 +1,9 @@
 import { MatchStatus, Participant } from '@prisma/client';
 import { Coordinate } from 'src/shared/types/coordinate.type';
-import { MapWithTiles } from 'src/shared/types/map-with-tiles.type';
-import { MatchRich } from 'src/shared/types/match-rich.type';
-import { PlacementRuleName } from 'src/shared/types/placement-rule-name.type';
-import { Special } from 'src/shared/types/special.interface';
+import { MapWithTiles } from 'src/shared/types/database/map-with-tiles.type';
+import { MatchRich } from 'src/shared/types/database/match/match-rich.type';
+import { PlacementRuleName } from 'src/shared/types/placementRule/placement-rule-name.type';
+import { Special } from 'src/shared/types/special/special.interface';
 import { TransformedConstellation } from 'src/shared/types/transformed-constellation.interface';
 import {
   transformCoordinates,

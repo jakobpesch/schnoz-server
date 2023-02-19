@@ -1,4 +1,4 @@
-import { PlacementRule } from 'src/shared/types/placement-rule.type';
+import { PlacementRule } from 'src/shared/types/placementRule/placement-rule.type';
 
 export const inBounds: PlacementRule = (constellation, map) =>
   constellation.every(

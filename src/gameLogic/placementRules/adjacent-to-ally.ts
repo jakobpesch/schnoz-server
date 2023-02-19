@@ -1,6 +1,6 @@
 import { UnitType } from '@prisma/client';
-import { PlacementRule } from 'src/shared/types/placement-rule.type';
 import { TileWithUnits } from 'src/shared/types/database/tile-with-units.type';
+import { PlacementRule } from 'src/shared/types/placementRule/placement-rule.type';
 import {
   coordinatesAreEqual,
   getAdjacentCoordinatesOfConstellation,
