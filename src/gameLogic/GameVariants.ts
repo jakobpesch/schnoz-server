@@ -1,7 +1,7 @@
 import { Match, Participant, Rule, UnitConstellation } from '@prisma/client';
 import assert from 'assert';
 import { GameType } from 'src/shared/types/game-type.interface';
-import { placementRulesMap } from 'src/shared/types/placement-rule-map.const';
+import { placementRulesMap } from 'src/shared/types/placementRule/placement-rule-map.const';
 import { ScoringRule } from 'src/shared/types/scoring-rule.type';
 import { shuffleArray } from '../utils/arrayUtils';
 import { getTileLookup } from '../utils/coordinateUtils';

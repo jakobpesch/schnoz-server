@@ -8,8 +8,8 @@ import {
 } from '@nestjs/websockets';
 import { Match } from '@prisma/client';
 import { Server, Socket } from 'socket.io';
-import { MatchInstanceEvent } from 'src/shared/types/match-instance-event.enum';
-import { ServerEvent } from 'src/shared/types/server-event.enum';
+import { MatchInstanceEvent } from 'src/shared/types/events/match-instance-event.enum';
+import { ServerEvent } from 'src/shared/types/events/server-event.enum';
 import { MatchInstance } from './match-instance';
 
 @WebSocketGateway({ cors: { origin: '*' } })
@@ -70,18 +70,4 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     console.log('handleTimer', id, remainingTime);
     this.server.to(id).emit(ServerEvent.TIME_REMAINING, remainingTime);
   }
-
-  //   @SubscribeMessage('makeMove')
-  //   handleMakeMove(client: Socket, data: { matchId: string; move: any }) {
-  //     // Handle make move request
-  //     const { matchId, move } = data;
-  //     console.log('Make move:', matchId, move);
-
-  //     const match = this.matches.get(matchId);
-  //     if (match) {
-  //       for (const player of match.players) {
-  //         player.emit('moveMade', move);
-  //       }
-  //     }
-  //   }
 }

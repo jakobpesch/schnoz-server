@@ -1,7 +1,7 @@
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { GameSettings, Match } from '@prisma/client';
 import { Socket } from 'socket.io';
-import { MatchInstanceEvent } from 'src/shared/types/match-instance-event.enum';
+import { MatchInstanceEvent } from 'src/shared/types/events/match-instance-event.enum';
 import { matchRich } from 'src/shared/types/match-rich.const';
 import { MatchRich } from 'src/shared/types/match-rich.type';
 import { prisma } from '../../../prisma/client';
