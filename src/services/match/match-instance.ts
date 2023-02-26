@@ -1,5 +1,5 @@
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { GameSettings, Match } from '@prisma/client';
+import { GameSettings, Match, User } from '@prisma/client';
 import { Socket } from 'socket.io';
 import { matchRich } from 'src/shared/types/database/match/match-rich.const';
 import { MatchRich } from 'src/shared/types/database/match/match-rich.type';
@@ -8,7 +8,7 @@ import { prisma } from '../../../prisma/client';
 
 export class MatchInstance {
   private match: MatchRich;
-  private sockets = new Map<Socket['id'], Socket>();
+  public sockets = new Map<User['id'], Socket>();
   private endTurnTime: number;
   private readonly turnTime = 30_000;
   private turnTimer: NodeJS.Timeout;
@@ -33,17 +33,29 @@ export class MatchInstance {
     this.match = match;
   }
 
-  private async sync() {
-    // only get changing columns
-  }
+  private async sync() {}
 
   /** Participant connects to match instance */
-  public connect(socket: Socket) {
-    socket.join(this.id);
-    this.sockets.set(socket.id, socket);
-    if (this.sockets.size === 2) {
-      this.nextTurn();
+  public async connect(socket: Socket, userId: User['id']) {
+    await this.fetch();
+    const userIsParticipant = this.match.players.some(
+      (player) => player.userId === userId,
+    );
+    if (!userIsParticipant) {
+      throw new Error(
+        `User with id ${userId} is no participant in match ${this.id}`,
+      );
     }
+    const existingSocket = this.sockets.get(userId);
+    if (existingSocket) {
+      existingSocket.disconnect();
+    }
+    socket.join(this.id);
+    this.sockets.set(userId, socket);
+    // console.log(this.sockets.keys());
+    // if (this.sockets.size === 2) {
+    //   this.nextTurn();
+    // }
   }
 
   private nextTurn() {
@@ -61,9 +73,9 @@ export class MatchInstance {
     }, this.turnTime);
   }
 
-  public disconnect(socket: Socket) {
+  public disconnect(socket: Socket, userId: User['id']) {
     socket.leave(this.id);
-    this.sockets.delete(socket.id);
+    this.sockets.delete(userId);
   }
 
   public async setGameSettings(settings: Omit<Partial<GameSettings>, 'id'>) {
