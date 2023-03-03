@@ -8,6 +8,9 @@ import { prisma } from '../../../prisma/client';
 
 export class MatchInstance {
   private match: MatchRich;
+  get Match() {
+    return this.match;
+  }
   public sockets = new Map<User['id'], Socket>();
   private endTurnTime: number;
   private readonly turnTime = 30_000;
@@ -78,11 +81,12 @@ export class MatchInstance {
     this.sockets.delete(userId);
   }
 
-  public async setGameSettings(settings: Omit<Partial<GameSettings>, 'id'>) {
-    this.match = await prisma.match.update({
-      where: { id: this.id },
-      data: { gameSettings: { update: { ...settings } } },
-      ...matchRich,
+  public async setGameSettings(
+    settings: Omit<Partial<GameSettings>, 'id' | 'matchId'>,
+  ) {
+    return await prisma.gameSettings.update({
+      where: { matchId: this.id },
+      data: settings,
     });
   }
 

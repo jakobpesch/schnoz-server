@@ -6,7 +6,7 @@ import {
   OnGatewayConnection,
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
-import { Match } from '@prisma/client';
+import { Match, User } from '@prisma/client';
 import { Server, Socket } from 'socket.io';
 import { ClientEvent } from 'src/shared/types/events/client-event.enum';
 import { MatchInstanceEvent } from 'src/shared/types/events/match-instance-event.enum';
@@ -20,10 +20,21 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @WebSocketServer()
   server: Server;
-  private clients = new Map<Socket['id'], MatchInstance>();
+  private clients = new Map<
+    Socket['id'],
+    { userId: User['id']; matchInstance: MatchInstance }
+  >();
   private matches = new Map<MatchInstance['id'], MatchInstance>();
 
   constructor(private readonly eventEmitter: EventEmitter2) {}
+
+  private getUserIdForClient(clientId: Socket['id']) {
+    return this.clients.get(clientId)?.userId;
+  }
+
+  private getMatchInstanceForClient(clientId: Socket['id']) {
+    return this.clients.get(clientId)?.matchInstance;
+  }
 
   async handleConnection(client: Socket) {
     const { matchId, userId } = client.handshake.query;
@@ -45,7 +56,7 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     this.matches.set(matchId, matchInstance);
-    this.clients.set(client.id, matchInstance);
+    this.clients.set(client.id, { userId, matchInstance });
     try {
       await matchInstance.connect(client, userId);
       await this.cleanup();
@@ -53,7 +64,9 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.logger.error(e);
       client.disconnect();
     }
-    this.server.to(matchId).emit(ServerEvent.PLAYER_CONNECTED_TO_MATCH, userId);
+    this.server
+      .to(matchId)
+      .emit(ServerEvent.PLAYER_CONNECTED_TO_MATCH, matchInstance.Match);
     this.logger.verbose(`Client connected to match "${matchId}"`);
     this.logger.verbose(
       `Current clients in match "${matchId}": ${Array.from(
@@ -64,7 +77,7 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   handleDisconnect(client: Socket) {
-    const matchInstance = this.clients.get(client.id);
+    const { matchInstance } = this.clients.get(client.id) ?? {};
     const { matchId, userId } = client.handshake.query;
     if (typeof userId !== 'string') {
       return;
@@ -106,6 +119,36 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     } else {
       client.emit('matchNotFound', matchId);
     }
+  }
+  @SubscribeMessage(ClientEvent.UPDATE_GAME_SETTINGS)
+  async handleUpdateGameSettings(client: Socket, data: { [x: string]: any }) {
+    const matchInstance = this.getMatchInstanceForClient(client.id);
+
+    if (!matchInstance) {
+      this.logger.error(`No connection for client ${client.id} found`);
+      return;
+    }
+
+    try {
+      const updatedGameSettings = await matchInstance.setGameSettings(data);
+      this.server
+        .to(matchInstance.Match.id)
+        .emit(ServerEvent.UPDATED_GAME_SETTINGS, updatedGameSettings);
+    } catch (e) {
+      this.logger.error(e);
+      client.disconnect();
+    }
+
+    console.log('success');
+    console.log(this.getUserIdForClient(client.id));
+
+    // const matchInstance = this.matches.get(matchId);
+    // if (matchInstance) {
+    //   matchInstance.disconnect(client, userId);
+    //   this.server.to(matchId).emit('disconnectedFromMatch', matchId);
+    // } else {
+    //   client.emit('matchNotFound', matchId);
+    // }
   }
 
   @OnEvent(MatchInstanceEvent.END_TURN)
