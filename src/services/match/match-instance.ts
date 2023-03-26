@@ -382,29 +382,30 @@ export class MatchInstance {
     for (let i = 0; i < playersWithUpdatedScore.length; i++) {
       const player = playersWithUpdatedScore[i];
 
-      const bonusPointsFromCard =
-        player.id === this.match.activePlayerId ? unitConstellation.value : 0;
+      const bonusPointsFromCard = unitConstellation.value;
 
-      const usedPointsFromSpecials =
-        player.id === this.match.activePlayerId
-          ? specials.reduce((totalCost, special) => {
-              return totalCost + special.cost;
-            }, 0)
-          : 0;
+      const usedPointsFromSpecials = specials.reduce((totalCost, special) => {
+        return totalCost + special.cost;
+      }, 0);
 
       updatedPlayers.push(
         await prisma.participant.update({
           where: { id: player.id },
           data: {
             score: player.score,
-            bonusPoints:
-              this.activePlayer.bonusPoints +
-              bonusPointsFromCard -
-              usedPointsFromSpecials,
+            ...(player.id === this.activePlayer.id
+              ? {
+                  bonusPoints:
+                    this.activePlayer.bonusPoints +
+                    bonusPointsFromCard -
+                    usedPointsFromSpecials,
+                }
+              : {}),
           },
         }),
       );
     }
+    this.players = updatedPlayers;
 
     const winnerId =
       determineWinner(this.match, this.gameSettings, playersWithUpdatedScore)
@@ -430,7 +431,7 @@ export class MatchInstance {
       return { message: 'Error while changing turns', statusCode: 500 };
     }
 
-    const updatedMatch = await prisma.match.update({
+    this.match = await prisma.match.update({
       where: { id: this.match.id },
       data: {
         openCards,
@@ -441,7 +442,7 @@ export class MatchInstance {
           : {}),
       },
     });
-    return { updatedMatch, updatedTilesWithUnits, updatedPlayers };
+    return { updatedMatch: this.match, updatedTilesWithUnits, updatedPlayers };
   }
 
   private async changeTurn(args: any) {
