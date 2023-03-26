@@ -6,6 +6,7 @@ import {
   MatchStatus,
   Participant,
   Prisma,
+  UnitConstellation,
   UnitType,
   User,
 } from '@prisma/client';
@@ -22,6 +23,7 @@ import { MatchInstanceEvent } from 'src/shared/types/events/match-instance-event
 import { PlacementRuleName } from 'src/shared/types/placementRule/placement-rule-name.type';
 import { Special } from 'src/shared/types/special/special.interface';
 import { IUnitConstellation } from 'src/shared/types/unit-constellation.interface';
+import { shuffleArray } from 'src/utils/arrayUtils';
 import {
   buildTileLookupId,
   getNewlyRevealedTiles,
@@ -174,10 +176,86 @@ export class MatchInstance {
   public async setGameSettings(
     settings: Omit<Partial<GameSettings>, 'id' | 'matchId'>,
   ) {
-    return await prisma.gameSettings.update({
+    this.gameSettings = await prisma.gameSettings.update({
       where: { matchId: this.id },
       data: settings,
     });
+    return this.gameSettings;
+  }
+
+  private checkConditionsForCreation(userId: string): { error?: Error } {
+    if (this.match.status === MatchStatus.STARTED) {
+      return {
+        error: { message: 'Match has already started', statusCode: 400 },
+      };
+    }
+    if (this.match.createdById !== userId) {
+      return {
+        error: {
+          message: "Only the match's creator can start the match",
+          statusCode: 400,
+        },
+      };
+    }
+    if (!this.map) {
+      return { error: { message: 'No map', statusCode: 500 } };
+    }
+    if (!this.players) {
+      return { error: { message: 'Players array is null', statusCode: 500 } };
+    }
+    if (this.players.length < 2) {
+      return { error: { message: 'Match is not full yet', statusCode: 400 } };
+    }
+    if (!this.gameSettings) {
+      return { error: { message: 'No game settings', statusCode: 500 } };
+    }
+
+    const isMapSizeEven = this.gameSettings.mapSize % 2 === 0;
+    if (isMapSizeEven) {
+      return {
+        error: {
+          message: 'mapSize needs to be an odd integer',
+          statusCode: 400,
+        },
+      };
+    }
+
+    return {};
+  }
+
+  public async startMatch(userId: User['id']) {
+    await this.sync();
+    const { error: startError } = this.checkConditionsForCreation(userId);
+
+    if (startError) {
+      return startError;
+    }
+
+    const status = MatchStatus.STARTED;
+    const startedAt = new Date();
+
+    const activePlayerId = this.players!.find(
+      (player) => player.userId === userId,
+    )?.id;
+
+    const openCards = shuffleArray<UnitConstellation>(
+      Object.values({ ...UnitConstellation }),
+    ).slice(0, 3);
+
+    const turn = 1;
+
+    this.match = await prisma.match.update({
+      where: { id: this.match.id },
+      data: {
+        openCards,
+        status,
+        startedAt,
+        activePlayerId,
+        turn,
+      },
+    });
+
+    return this.match;
   }
 
   public async makeMove(
@@ -362,7 +440,6 @@ export class MatchInstance {
           ? { winnerId, status: MatchStatus.FINISHED, finishedAt: new Date() }
           : {}),
       },
-      ...matchRich,
     });
     return { updatedMatch, updatedTilesWithUnits, updatedPlayers };
   }

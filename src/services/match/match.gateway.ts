@@ -56,28 +56,27 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     let matchInstance = this.matches.get(matchId);
     if (!matchInstance) {
+      this.logger.verbose(
+        `No match instance found for match "${matchId}". Creating new...`,
+      );
       matchInstance = new MatchInstance(matchId, this.eventEmitter);
+      this.clients.set(client.id, { userId, matchInstance });
+      this.matches.set(matchId, matchInstance);
       await matchInstance.init();
+    } else {
+      this.logger.verbose(
+        `Match instance for client "${client.id}" found. Reusing...`,
+      );
+      this.clients.set(client.id, { userId, matchInstance });
     }
-
-    this.matches.set(matchId, matchInstance);
-    this.clients.set(client.id, { userId, matchInstance });
     try {
       await matchInstance.connect(client, userId);
       await this.cleanup();
     } catch (e) {
+      this.logger.error("Couldn't connect client to match");
       this.logger.error(e);
       client.disconnect();
     }
-    this.logger.error({
-      match: matchInstance.Match,
-      map: matchInstance.Map,
-      tiles: matchInstance.TilesWithUnits?.map((t) => `${t.row},${t.col}`).join(
-        '|',
-      ),
-      gameSettings: matchInstance.GameSettings,
-      players: matchInstance.Players,
-    });
     this.server.to(matchId).emit(ServerEvent.PLAYER_CONNECTED_TO_MATCH, {
       match: matchInstance.Match,
       map: matchInstance.Map,
@@ -122,20 +121,37 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage(ClientEvent.DISCONNECT_FROM_MATCH)
-  handleDisconnectFromMatch(
-    client: Socket,
-    data: { userId: string; matchId: string },
-  ) {
-    // Handle leave match request
-    const { matchId, userId } = data;
-    console.log('Leave match:', matchId);
-
-    const matchInstance = this.matches.get(matchId);
-    if (matchInstance) {
-      matchInstance.disconnect(client, userId);
-      this.server.to(matchId).emit('disconnectedFromMatch', matchId);
-    } else {
-      client.emit('matchNotFound', matchId);
+  handleDisconnectFromMatch(client: Socket, data: { userId: User['id'] }) {
+    const { userId } = data;
+    const matchInstance = this.getMatchInstanceForClient(client.id);
+    if (!matchInstance) {
+      this.logger.error(`No match for client ${client.id} found`);
+      return;
+    }
+    matchInstance.disconnect(client, userId);
+    this.server
+      .to(matchInstance.Match.id)
+      .emit(ServerEvent.DISCONNECTED_FROM_MATCH, matchInstance.Match.id);
+  }
+  @SubscribeMessage(ClientEvent.START_MATCH)
+  async handleStartMatch(client: Socket, data: { userId: User['id'] }) {
+    const { userId } = data;
+    const matchInstance = this.getMatchInstanceForClient(client.id);
+    if (!matchInstance) {
+      this.logger.error(`No match for client ${client.id} found`);
+      return;
+    }
+    try {
+      await matchInstance.startMatch(userId);
+      this.server.to(matchInstance.Match.id).emit(ServerEvent.STARTED_MATCH, {
+        match: matchInstance.Match,
+        map: matchInstance.Map,
+        tilesWithUnits: matchInstance.TilesWithUnits,
+        players: matchInstance.Players,
+      });
+    } catch (e) {
+      this.logger.error(e);
+      client.disconnect();
     }
   }
   @SubscribeMessage(ClientEvent.UPDATE_GAME_SETTINGS)
@@ -235,7 +251,6 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.disconnect();
     }
   }
-
   @SubscribeMessage(ClientEvent.HOVER)
   async handleOpponentHover(client: Socket, data: { [x: string]: any }) {
     const matchInstance = this.getMatchInstanceForClient(client.id);
