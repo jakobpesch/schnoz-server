@@ -1,7 +1,6 @@
-import { MatchStatus, Participant } from '@prisma/client';
+import { Map, Match, MatchStatus, Participant } from '@prisma/client';
 import { Coordinate } from 'src/shared/types/coordinate.type';
-import { MapWithTiles } from 'src/shared/types/database/map-with-tiles.type';
-import { MatchRich } from 'src/shared/types/database/match/match-rich.type';
+import { TileWithUnit } from 'src/shared/types/database/tile-with-units.type';
 import { PlacementRuleName } from 'src/shared/types/placementRule/placement-rule-name.type';
 import { Special } from 'src/shared/types/special/special.interface';
 import { TransformedConstellation } from 'src/shared/types/transformed-constellation.interface';
@@ -17,11 +16,13 @@ import { expandBuildRadiusByOne } from './Specials';
 export const checkConditionsForUnitConstellationPlacement = (
   targetCoordinate: Coordinate,
   unitConstellation: TransformedConstellation,
-  match: MatchRich,
-  map: MapWithTiles,
+  match: Match | undefined,
+  activePlayer: Participant | undefined,
+  map: Map | undefined,
+  tilesWithUnits: TileWithUnit[] | undefined,
   tileLookup: TileLookup,
   ignoredRules: PlacementRuleName[],
-  placingPlayer: Participant['id'],
+  placingPlayer: Participant['id'] | undefined,
   specials: Special[],
 ) => {
   if (!match) {
@@ -38,6 +39,10 @@ export const checkConditionsForUnitConstellationPlacement = (
 
   if (match.activePlayerId !== placingPlayer) {
     return { error: { message: "It's not your turn", statusCode: 400 } };
+  }
+
+  if (!tilesWithUnits) {
+    return { error: { message: 'No tiles', statusCode: 400 } };
   }
 
   const targetTile = tileLookup[buildTileLookupId(targetCoordinate)];
@@ -64,8 +69,8 @@ export const checkConditionsForUnitConstellationPlacement = (
     specials.some(
       (special) =>
         special.type === 'EXPAND_BUILD_RADIUS_BY_1' &&
-        match.activePlayer &&
-        match.activePlayer.bonusPoints + unitConstellation.value >=
+        activePlayer &&
+        activePlayer.bonusPoints + unitConstellation.value >=
           expandBuildRadiusByOne.cost,
     )
   ) {
@@ -80,7 +85,7 @@ export const checkConditionsForUnitConstellationPlacement = (
     ([ruleName, rule]) =>
       ignoredRules.includes(ruleName)
         ? true
-        : rule(translatedCoordinates, map, placingPlayer),
+        : rule(translatedCoordinates, map, tilesWithUnits, placingPlayer),
   );
 
   if (!canBePlaced) {

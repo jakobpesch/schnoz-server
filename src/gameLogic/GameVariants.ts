@@ -1,5 +1,4 @@
 import { Match, Participant, Rule, UnitConstellation } from '@prisma/client';
-import assert from 'assert';
 import { GameType } from 'src/shared/types/game-type.interface';
 import { placementRulesMap } from 'src/shared/types/placementRule/placement-rule-map.const';
 import { ScoringRule } from 'src/shared/types/scoring-rule.type';
@@ -53,7 +52,11 @@ export const defaultGame: GameType = {
     if (!this.shouldEvaluate(match.turn)) {
       return match.players;
     }
-    assert(match.map);
+
+    if (!match.map) {
+      console.error('Map missing');
+      return match.players;
+    }
     const tileLookup = getTileLookup(match.map.tiles);
 
     const winners = (this.scoringRules as ScoringRule[]).map((rule) => {
@@ -76,7 +79,9 @@ export const defaultGame: GameType = {
           }
         })
         .shift();
-      assert(winningEvaluation);
+      if (!winningEvaluation) {
+        throw new Error('Could not evaluate');
+      }
       return winningEvaluation;
     });
 

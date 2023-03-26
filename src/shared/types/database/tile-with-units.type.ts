@@ -1,9 +1,9 @@
-import { Prisma } from "@prisma/client"
+import { Prisma } from '@prisma/client';
 
 const tileRich = Prisma.validator<Prisma.TileArgs>()({
   include: {
     unit: true,
   },
-})
+});
 
-export type TileWithUnits = Prisma.TileGetPayload<typeof tileRich>
+export type TileWithUnit = Prisma.TileGetPayload<typeof tileRich>;

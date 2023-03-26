@@ -1,6 +1,6 @@
 import { Terrain } from '@prisma/client';
 import { Coordinate } from 'src/shared/types/coordinate.type';
-import { TileWithUnits } from 'src/shared/types/database/tile-with-units.type';
+import { TileWithUnit } from 'src/shared/types/database/tile-with-units.type';
 import {
   buildTileLookupId,
   coordinateIncludedIn,
@@ -16,7 +16,7 @@ import {
   TileLookup,
 } from './coordinateUtils';
 
-const tiles: TileWithUnits[] = [
+const tiles: TileWithUnit[] = [
   {
     row: 0,
     col: 0,

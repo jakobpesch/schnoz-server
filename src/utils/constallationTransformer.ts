@@ -1,5 +1,4 @@
 import { UnitConstellation } from '@prisma/client';
-import assert from 'assert';
 import { Coordinate } from 'src/shared/types/coordinate.type';
 
 type TransformationFunction = (coordinates: Coordinate[]) => Coordinate[];
@@ -83,7 +82,9 @@ export const encodeUnitConstellation = (
   const encoded: UnitConstellation | undefined = { ...UnitConstellation }[
     coordinates.map(([row, col]) => `r${row}c${col}`).join('_') + '_v' + value
   ];
-  assert(encoded);
+  if (!encoded) {
+    throw new Error('Could not encode unit constellation');
+  }
   return encoded;
 };
 
@@ -96,13 +97,17 @@ export const decodeUnitConstellation = (
   unitConstellationString: UnitConstellation,
 ) => {
   const value = unitConstellationString.split('_v').pop();
-  assert(value);
+  if (!value) {
+    throw new Error('Could not deencode unit constellation');
+  }
   const regexp = /r(?<row>[0-9]+)c(?<col>[0-9]+)_?/g;
   const regExpMatch = [...unitConstellationString.matchAll(regexp)];
   return {
     value: parseInt(value),
     coordinates: regExpMatch.map((match) => {
-      assert(match.groups);
+      if (!match.groups) {
+        throw new Error('Could not deencode unit constellation');
+      }
       const coordinate: Coordinate = [
         parseInt(match.groups.row),
         parseInt(match.groups.col),

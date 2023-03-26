@@ -1,9 +1,11 @@
+import { Map } from '@prisma/client';
 import { Coordinate } from '../coordinate.type';
-import { MatchRich } from '../database/match/match-rich.type';
+import { TileWithUnit } from '../database/tile-with-units.type';
 
 export type PlacementRule = (
   constellation: Coordinate[],
   // @todo consider replaceing with tile lookup
-  map: Exclude<MatchRich['map'], null>,
+  map: Map,
+  tilesWithunits: TileWithUnit[],
   playerId: string,
 ) => boolean;
