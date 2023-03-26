@@ -276,7 +276,7 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     const opponentClient = matchInstance.sockets.get(opponent.userId);
     if (!opponentClient) {
-      this.logger.error('Could not find opponent client');
+      // this.logger.error('Could not find opponent client');
       return;
     }
 
