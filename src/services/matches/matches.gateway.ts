@@ -16,8 +16,13 @@ import { PlacementRuleName } from 'src/shared/types/placementRule/placement-rule
 import { Special } from 'src/shared/types/special/special.interface';
 import { isSpecial } from 'src/shared/types/special/special.type-guard';
 import { IUnitConstellation } from 'src/shared/types/unit-constellation.interface';
+import { GameSettingsService } from '../game-settings/game-settings.service';
 import { AppLoggerService } from '../logger/logger.service';
+import { MapsService } from '../maps/maps.service';
+import { ParticipantsService } from '../participants/participants.service';
+import { TilesService } from '../tiles/tiles.service';
 import { MatchInstance } from './match-instance';
+import { MatchesService } from './matches.service';
 
 @WebSocketGateway({ cors: { origin: '*' } })
 export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -31,7 +36,14 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   >();
   private matches = new Map<MatchInstance['id'], MatchInstance>();
 
-  constructor(private readonly eventEmitter: EventEmitter2) {}
+  constructor(
+    private readonly eventEmitter: EventEmitter2,
+    private readonly matchesService: MatchesService,
+    private readonly mapsService: MapsService,
+    private readonly participantsService: ParticipantsService,
+    private readonly tilesService: TilesService,
+    private readonly gameSettingsService: GameSettingsService,
+  ) {}
 
   private getUserIdForClient(clientId: Socket['id']) {
     return this.clients.get(clientId)?.userId;
@@ -59,7 +71,15 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.logger.verbose(
         `No match instance found for match "${matchId}". Creating new...`,
       );
-      matchInstance = new MatchInstance(matchId, this.eventEmitter);
+      matchInstance = new MatchInstance(
+        matchId,
+        this.eventEmitter,
+        this.matchesService,
+        this.gameSettingsService,
+        this.mapsService,
+        this.participantsService,
+        this.tilesService,
+      );
       this.clients.set(client.id, { userId, matchInstance });
       this.matches.set(matchId, matchInstance);
       await matchInstance.init();
@@ -77,12 +97,13 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.logger.error(e);
       client.disconnect();
     }
+    this.logger.verbose(`PLAYER_CONNECTED_TO_MATCH "${matchId}"`);
     this.server.to(matchId).emit(ServerEvent.PLAYER_CONNECTED_TO_MATCH, {
       match: matchInstance.Match,
       map: matchInstance.Map,
       tilesWithUnits: matchInstance.TilesWithUnits,
       gameSettings: matchInstance.GameSettings,
-      players: matchInstance.Players,
+      players: matchInstance.Participants,
     });
     this.logger.verbose(`Client connected to match "${matchId}"`);
     this.logger.verbose(
@@ -147,7 +168,7 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
         match: matchInstance.Match,
         map: matchInstance.Map,
         tilesWithUnits: matchInstance.TilesWithUnits,
-        players: matchInstance.Players,
+        players: matchInstance.Participants,
       });
     } catch (e) {
       this.logger.error(e);
@@ -287,7 +308,6 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.disconnect();
     }
   }
-
   @OnEvent(MatchInstanceEvent.END_TURN)
   handleTimer(id: Match['id'], remainingTime: number) {
     console.log('handleTimer', id, remainingTime);

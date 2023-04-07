@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { MatchModule } from './services/match/match.module';
-import { EventEmitterModule } from '@nestjs/event-emitter';
+import { MatchesModule } from './services/matches/matches.module';
 
 @Module({
-  imports: [EventEmitterModule.forRoot(), MatchModule],
+  imports: [EventEmitterModule.forRoot(), MatchesModule],
   controllers: [AppController],
   providers: [AppService],
 })

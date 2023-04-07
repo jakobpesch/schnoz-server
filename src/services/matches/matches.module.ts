@@ -1,0 +1,21 @@
+import { Module } from '@nestjs/common';
+import { GameSettingsService } from '../game-settings/game-settings.service';
+import { MapsService } from '../maps/maps.service';
+import { ParticipantsService } from '../participants/participants.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { TilesService } from '../tiles/tiles.service';
+import { MatchGateway } from './matches.gateway';
+import { MatchesService } from './matches.service';
+
+@Module({
+  providers: [
+    MatchGateway,
+    MatchesService,
+    PrismaService,
+    MapsService,
+    ParticipantsService,
+    GameSettingsService,
+    TilesService,
+  ],
+})
+export class MatchesModule {}

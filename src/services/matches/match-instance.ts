@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   GameSettings,
@@ -6,6 +7,8 @@ import {
   MatchStatus,
   Participant,
   Prisma,
+  Tile,
+  Unit,
   UnitConstellation,
   UnitType,
   User,
@@ -29,16 +32,20 @@ import {
   getNewlyRevealedTiles,
   getTileLookup,
 } from 'src/utils/coordinateUtils';
-import { prisma } from '../../../prisma/client';
+import { GameSettingsService } from '../game-settings/game-settings.service';
+import { MapsService } from '../maps/maps.service';
+import { ParticipantsService } from '../participants/participants.service';
+import { TilesService } from '../tiles/tiles.service';
+import { MatchesService } from './matches.service';
 
 export class MatchInstance {
   private match: Match;
   get Match() {
     return this.match;
   }
-  private players: Participant[] | null = null;
-  get Players() {
-    return this.players;
+  private participants: Participant[] = [];
+  get Participants() {
+    return this.participants;
   }
   private map: SchnozMap | null = null;
   get Map() {
@@ -48,13 +55,13 @@ export class MatchInstance {
   get TilesWithUnits() {
     return this.tilesWithUnits;
   }
-  private gameSettings: GameSettings;
+  private gameSettings: GameSettings | null = null;
   get GameSettings() {
     return this.gameSettings;
   }
 
   get activePlayer() {
-    return this.players?.find(
+    return this.participants.find(
       (player) => player.id === this.match.activePlayerId,
     );
   }
@@ -67,73 +74,52 @@ export class MatchInstance {
   constructor(
     private readonly id: Match['id'],
     private readonly eventEmitter: EventEmitter2,
+    private readonly matchesService: MatchesService,
+    private readonly gameSettingsService: GameSettingsService,
+    private readonly mapsService: MapsService,
+    private readonly participantsService: ParticipantsService,
+    private readonly tilesService: TilesService,
   ) {}
 
   public async init() {
-    await this.fetch();
+    await this.sync();
   }
 
   public getOpponentByUserId(userId: User['id']) {
-    return this.players?.find((player) => player.userId !== userId);
-  }
-
-  private async fetch() {
-    const match = await prisma.match.findUnique({
-      where: { id: this.id },
-    });
-    if (!match) {
-      throw new Error(`Could not find match with id ${this.id}`);
-    }
-    this.match = match;
-
-    const gameSettings = await prisma.gameSettings.findUnique({
-      where: { matchId: this.id },
-    });
-    if (!gameSettings) {
-      throw new Error(
-        `Could not find gameSettings in match with id ${this.id}`,
-      );
-    }
-    this.gameSettings = gameSettings;
-
-    this.map = await prisma.map.findUnique({
-      where: { matchId: this.id },
-    });
-
-    const players = await prisma.participant.findMany({
-      where: { matchId: this.id },
-    });
-    if (players.length === 0) {
-      throw new Error(`No player in match with id ${this.id}`);
-    }
-    this.players = players;
-
-    if (this.map) {
-      const tilesWithUnits = await prisma.tile.findMany({
-        where: { mapId: this.map.id },
-        include: { unit: true },
-      });
-      if (tilesWithUnits.length === 0) {
-        throw new Error(`No in tiles in map with id ${this.map.id}`);
-      }
-      this.tilesWithUnits = tilesWithUnits;
-    }
+    return this.participants.find((player) => player.userId !== userId);
   }
 
   private async sync() {
-    await this.fetch();
+    this.match = await this.matchesService.findOne({ id: this.id });
+    this.gameSettings = await this.gameSettingsService.findOne({
+      matchId: this.id,
+    });
+    const participants = await this.participantsService.findMany({
+      where: { matchId: this.id },
+    });
+    if (participants.length === 0) {
+      throw new Error(`No player in match with id ${this.id}`);
+    }
+    this.participants = participants;
+
+    this.map = await this.mapsService.findOne({ matchId: this.id });
+    if (this.map) {
+      this.tilesWithUnits = await this.tilesService.findMany({
+        where: { mapId: this.map.id },
+      });
+    }
   }
 
   /** Participant connects to match instance */
   public async connect(socket: Socket, userId: User['id']) {
-    await this.fetch();
+    await this.sync();
 
-    if (!this.players) {
+    if (!this.participants) {
       throw new Error(
         `User with id ${userId} is no participant in match ${this.id}`,
       );
     }
-    const userIsParticipant = this.players.some(
+    const userIsParticipant = this.participants.some(
       (player) => player.userId === userId,
     );
     if (!userIsParticipant) {
@@ -176,7 +162,7 @@ export class MatchInstance {
   public async setGameSettings(
     settings: Omit<Partial<GameSettings>, 'id' | 'matchId'>,
   ) {
-    this.gameSettings = await prisma.gameSettings.update({
+    this.gameSettings = await this.gameSettingsService.update({
       where: { matchId: this.id },
       data: settings,
     });
@@ -200,10 +186,10 @@ export class MatchInstance {
     if (!this.map) {
       return { error: { message: 'No map', statusCode: 500 } };
     }
-    if (!this.players) {
+    if (!this.participants) {
       return { error: { message: 'Players array is null', statusCode: 500 } };
     }
-    if (this.players.length < 2) {
+    if (this.participants.length < 2) {
       return { error: { message: 'Match is not full yet', statusCode: 400 } };
     }
     if (!this.gameSettings) {
@@ -234,7 +220,7 @@ export class MatchInstance {
     const status = MatchStatus.STARTED;
     const startedAt = new Date();
 
-    const activePlayerId = this.players!.find(
+    const activePlayerId = this.participants!.find(
       (player) => player.userId === userId,
     )?.id;
 
@@ -244,7 +230,7 @@ export class MatchInstance {
 
     const turn = 1;
 
-    this.match = await prisma.match.update({
+    this.match = await this.matchesService.update({
       where: { id: this.match.id },
       data: {
         openCards,
@@ -285,6 +271,10 @@ export class MatchInstance {
 
     if (!this.tilesWithUnits) {
       return { message: 'No tiles', statusCode: 500 };
+    }
+
+    if (!this.gameSettings) {
+      return { message: 'No game settings', statusCode: 500 };
     }
 
     const currentBonusPoints =
@@ -329,39 +319,33 @@ export class MatchInstance {
       return revealedError;
     }
 
-    const updateTilesPromises: Prisma.Prisma__TileClient<
-      TileWithUnit,
-      never
-    >[] = [];
+    const updateTilesPromises: Promise<Tile & { unit: Unit | null }>[] = [];
     translatedCoordinates.forEach((coordinate) => {
       const { mapId, row, col } = tileLookup[buildTileLookupId(coordinate)];
       updateTilesPromises.push(
-        prisma.tile.update({
+        this.tilesService.update({
           where: { mapId_row_col: { mapId, row, col } },
           data: {
             unit: { create: { type: UnitType.UNIT, ownerId: participantId } },
           },
-          include: { unit: true },
         }),
       );
     });
     revealedTiles.forEach(({ mapId, row, col }) => {
       updateTilesPromises.push(
-        prisma.tile.update({
+        this.tilesService.update({
           where: {
             mapId_row_col: { mapId, row, col },
           },
           data: {
             visible: true,
           },
-          include: { unit: true },
         }),
       );
     });
     const updatedTilesWithUnits = await Promise.all(updateTilesPromises);
-    const matchWithPlacedTiles = await prisma.match.findUnique({
-      where: { id: this.match.id },
-      ...matchRich,
+    const matchWithPlacedTiles = await this.matchesService.findOneRich({
+      id: this.match.id,
     });
 
     if (
@@ -389,7 +373,7 @@ export class MatchInstance {
       }, 0);
 
       updatedPlayers.push(
-        await prisma.participant.update({
+        await this.participantsService.update({
           where: { id: player.id },
           data: {
             score: player.score,
@@ -405,7 +389,7 @@ export class MatchInstance {
         }),
       );
     }
-    this.players = updatedPlayers;
+    this.participants = updatedPlayers;
 
     const winnerId =
       determineWinner(this.match, this.gameSettings, playersWithUpdatedScore)
@@ -431,7 +415,7 @@ export class MatchInstance {
       return { message: 'Error while changing turns', statusCode: 500 };
     }
 
-    this.match = await prisma.match.update({
+    this.match = await this.matchesService.update({
       where: { id: this.match.id },
       data: {
         openCards,
@@ -447,7 +431,7 @@ export class MatchInstance {
 
   private async changeTurn(args: any) {
     const turnTime = 30; // @todo
-    const nextPlayerId = this.players?.find(
+    const nextPlayerId = this.participants.find(
       (p) => p.playerNumber !== this.activePlayer?.playerNumber,
     )?.id;
     if (!nextPlayerId) {
@@ -455,7 +439,7 @@ export class MatchInstance {
     }
     const now = new Date();
     const nextTurnEndTimestamp = now.setSeconds(now.getSeconds() + turnTime);
-    await prisma.match.update({
+    await this.matchesService.update({
       where: { id: this.match.id },
       data: {
         activePlayerId: nextPlayerId,
