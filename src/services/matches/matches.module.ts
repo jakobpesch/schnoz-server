@@ -4,6 +4,7 @@ import { MapsService } from '../maps/maps.service';
 import { ParticipantsService } from '../participants/participants.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TilesService } from '../tiles/tiles.service';
+import { UsersService } from '../users/users.service';
 import { MatchGateway } from './matches.gateway';
 import { MatchesService } from './matches.service';
 
@@ -16,6 +17,7 @@ import { MatchesService } from './matches.service';
     ParticipantsService,
     GameSettingsService,
     TilesService,
+    UsersService,
   ],
 })
 export class MatchesModule {}

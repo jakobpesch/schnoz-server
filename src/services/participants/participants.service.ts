@@ -11,6 +11,7 @@ export class ParticipantsService {
   ) {
     const participant = await this.prisma.participant.findUnique({
       where: participantWhereUniqueInput,
+      include: { user: true },
     });
     if (!participant) {
       throw new NotFoundException();
@@ -32,12 +33,14 @@ export class ParticipantsService {
       cursor,
       where,
       orderBy,
+      include: { user: true },
     });
   }
 
   async create(data: Prisma.ParticipantCreateInput) {
-    return this.prisma.participant.create({
+    return await this.prisma.participant.create({
       data,
+      include: { user: true },
     });
   }
 
@@ -49,6 +52,7 @@ export class ParticipantsService {
     return this.prisma.participant.update({
       data,
       where,
+      include: { user: true },
     });
   }
 

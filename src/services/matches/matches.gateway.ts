@@ -21,6 +21,7 @@ import { AppLoggerService } from '../logger/logger.service';
 import { MapsService } from '../maps/maps.service';
 import { ParticipantsService } from '../participants/participants.service';
 import { TilesService } from '../tiles/tiles.service';
+import { UsersService } from '../users/users.service';
 import { MatchInstance } from './match-instance';
 import { MatchesService } from './matches.service';
 
@@ -42,8 +43,16 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly mapsService: MapsService,
     private readonly participantsService: ParticipantsService,
     private readonly tilesService: TilesService,
+    private readonly usersService: UsersService,
     private readonly gameSettingsService: GameSettingsService,
   ) {}
+
+  private getClientForUserId(userId: User['id']) {
+    const clientId = Array.from(this.clients.entries()).find(
+      ([, { userId: id }]) => id === userId,
+    )?.[0];
+    return clientId ? this.server.sockets.sockets.get(clientId) : undefined;
+  }
 
   private getUserIdForClient(clientId: Socket['id']) {
     return this.clients.get(clientId)?.userId;
@@ -79,6 +88,7 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
         this.mapsService,
         this.participantsService,
         this.tilesService,
+        this.usersService,
       );
       this.clients.set(client.id, { userId, matchInstance });
       this.matches.set(matchId, matchInstance);
@@ -98,12 +108,16 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.disconnect();
     }
     this.logger.verbose(`PLAYER_CONNECTED_TO_MATCH "${matchId}"`);
+    const connectedUserIds = Array.from(matchInstance.sockets.keys());
     this.server.to(matchId).emit(ServerEvent.PLAYER_CONNECTED_TO_MATCH, {
       match: matchInstance.Match,
       map: matchInstance.Map,
       tilesWithUnits: matchInstance.TilesWithUnits,
       gameSettings: matchInstance.GameSettings,
       players: matchInstance.Participants,
+      connectedPlayers: matchInstance.Participants.filter((p) => {
+        return connectedUserIds.includes(p.userId);
+      }),
     });
     this.logger.verbose(`Client connected to match "${matchId}"`);
     this.logger.verbose(
@@ -115,14 +129,20 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   handleDisconnect(client: Socket) {
-    const { matchInstance } = this.clients.get(client.id) ?? {};
-    const { matchId, userId } = client.handshake.query;
+    const matchInstance = this.getMatchInstanceForClient(client.id);
+    const { userId } = client.handshake.query;
     if (typeof userId !== 'string') {
       return;
     }
-    if (matchInstance) {
-      matchInstance.disconnect(client, userId);
+    if (!matchInstance) {
+      this.logger.error(`No match for client ${client.id} found`);
+      return;
     }
+    matchInstance.disconnect(client, userId);
+    this.server.to(matchInstance.Match.id).emit(
+      ServerEvent.PLAYER_DISCONNECTED_FROM_MATCH,
+      matchInstance.Participants.filter((p) => p.userId !== userId),
+    );
     this.clients.delete(client.id);
     this.logger.verbose(`Client "${client.id}" disconnected`);
     this.logger.verbose(`Current clients: ${Array.from(this.clients.keys())}`);
@@ -141,19 +161,6 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
-  @SubscribeMessage(ClientEvent.DISCONNECT_FROM_MATCH)
-  handleDisconnectFromMatch(client: Socket, data: { userId: User['id'] }) {
-    const { userId } = data;
-    const matchInstance = this.getMatchInstanceForClient(client.id);
-    if (!matchInstance) {
-      this.logger.error(`No match for client ${client.id} found`);
-      return;
-    }
-    matchInstance.disconnect(client, userId);
-    this.server
-      .to(matchInstance.Match.id)
-      .emit(ServerEvent.DISCONNECTED_FROM_MATCH, matchInstance.Match.id);
-  }
   @SubscribeMessage(ClientEvent.START_MATCH)
   async handleStartMatch(client: Socket, data: { userId: User['id'] }) {
     const { userId } = data;
@@ -169,6 +176,7 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
         map: matchInstance.Map,
         tilesWithUnits: matchInstance.TilesWithUnits,
         players: matchInstance.Participants,
+        users: matchInstance.Users,
       });
     } catch (e) {
       this.logger.error(e);
@@ -189,6 +197,49 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.server
         .to(matchInstance.Match.id)
         .emit(ServerEvent.UPDATED_GAME_SETTINGS, updatedGameSettings);
+    } catch (e) {
+      this.logger.error(e);
+      client.disconnect();
+    }
+
+    console.log('success');
+    console.log(this.getUserIdForClient(client.id));
+
+    // const matchInstance = this.matches.get(matchId);
+    // if (matchInstance) {
+    //   matchInstance.disconnect(client, userId);
+    //   this.server.to(matchId).emit('disconnectedFromMatch', matchId);
+    // } else {
+    //   client.emit('matchNotFound', matchId);
+    // }
+  }
+  @SubscribeMessage(ClientEvent.KICK_PARTICIPANT)
+  async kickParticipant(client: Socket, data: { participant: Participant }) {
+    const { participant } = data;
+    const matchInstance = this.getMatchInstanceForClient(client.id);
+    if (!matchInstance) {
+      this.logger.error(`No connection for client ${client.id} found`);
+      return;
+    }
+    const clientIsHost =
+      matchInstance.Match.createdById === this.getUserIdForClient(client.id);
+    if (!clientIsHost) {
+      this.logger.error(`Client ${client.id} is not host`);
+      return;
+    }
+    try {
+      await matchInstance.kickParticipant(participant.id);
+
+      const clientOfKickedParticipant = this.getClientForUserId(
+        participant.userId,
+      );
+      console.log(clientOfKickedParticipant);
+
+      this.server
+        .to(matchInstance.Match.id)
+        .emit(ServerEvent.KICKED_PARTICIPANT, matchInstance.Participants);
+
+      clientOfKickedParticipant?.disconnect();
     } catch (e) {
       this.logger.error(e);
       client.disconnect();

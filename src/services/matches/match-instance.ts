@@ -19,7 +19,7 @@ import { createCustomGame } from 'src/gameLogic/GameVariants';
 import { isLastTurn } from 'src/gameLogic/isLastTurn';
 import { checkConditionsForUnitConstellationPlacement } from 'src/gameLogic/PlacementRule';
 import { Coordinate } from 'src/shared/types/coordinate.type';
-import { matchRich } from 'src/shared/types/database/match/match-rich.const';
+import { ParticipantWithUser } from 'src/shared/types/database/participant-with-user.type';
 import { TileWithUnit } from 'src/shared/types/database/tile-with-units.type';
 import { Error } from 'src/shared/types/error.interface';
 import { MatchInstanceEvent } from 'src/shared/types/events/match-instance-event.enum';
@@ -36,6 +36,7 @@ import { GameSettingsService } from '../game-settings/game-settings.service';
 import { MapsService } from '../maps/maps.service';
 import { ParticipantsService } from '../participants/participants.service';
 import { TilesService } from '../tiles/tiles.service';
+import { UsersService } from '../users/users.service';
 import { MatchesService } from './matches.service';
 
 export class MatchInstance {
@@ -43,9 +44,13 @@ export class MatchInstance {
   get Match() {
     return this.match;
   }
-  private participants: Participant[] = [];
+  private participants: ParticipantWithUser[] = [];
   get Participants() {
     return this.participants;
+  }
+  private users: User[] = [];
+  get Users() {
+    return this.users;
   }
   private map: SchnozMap | null = null;
   get Map() {
@@ -79,6 +84,7 @@ export class MatchInstance {
     private readonly mapsService: MapsService,
     private readonly participantsService: ParticipantsService,
     private readonly tilesService: TilesService,
+    private readonly usersService: UsersService,
   ) {}
 
   public async init() {
@@ -96,6 +102,7 @@ export class MatchInstance {
     });
     const participants = await this.participantsService.findMany({
       where: { matchId: this.id },
+      orderBy: { playerNumber: 'asc' },
     });
     if (participants.length === 0) {
       throw new Error(`No player in match with id ${this.id}`);
@@ -137,6 +144,16 @@ export class MatchInstance {
     // if (this.sockets.size === 2) {
     //   this.nextTurn();
     // }
+  }
+
+  public async kickParticipant(participantId: Participant['id']) {
+    if (this.match.status !== MatchStatus.CREATED) {
+      throw new Error('Cannot kick participants in a running match.');
+    }
+    await this.participantsService.delete({ id: participantId });
+    this.participants = this.participants.filter(
+      (player) => player.id !== participantId,
+    );
   }
 
   private nextTurn() {
@@ -255,7 +272,7 @@ export class MatchInstance {
     | {
         updatedMatch: Match;
         updatedTilesWithUnits: TileWithUnit[];
-        updatedPlayers: Participant[];
+        updatedPlayers: ParticipantWithUser[];
       }
     | Error
   > {
@@ -362,7 +379,7 @@ export class MatchInstance {
     const gameType = createCustomGame(this.gameSettings?.rules ?? null);
     const playersWithUpdatedScore = gameType.evaluate(matchWithPlacedTiles);
 
-    const updatedPlayers: Participant[] = [];
+    const updatedPlayers: ParticipantWithUser[] = [];
     for (let i = 0; i < playersWithUpdatedScore.length; i++) {
       const player = playersWithUpdatedScore[i];
 
