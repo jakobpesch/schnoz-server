@@ -19,6 +19,7 @@ import { IUnitConstellation } from 'src/shared/types/unit-constellation.interfac
 import { GameSettingsService } from '../game-settings/game-settings.service';
 import { AppLoggerService } from '../logger/logger.service';
 import { MapsService } from '../maps/maps.service';
+import { MatchLogsService } from '../match-logs/match-logs.service';
 import { ParticipantsService } from '../participants/participants.service';
 import { TilesService } from '../tiles/tiles.service';
 import { UsersService } from '../users/users.service';
@@ -35,7 +36,7 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     Socket['id'],
     { userId: User['id']; matchInstance: MatchInstance }
   >();
-  private matches = new Map<MatchInstance['id'], MatchInstance>();
+  private matches = new Map<MatchInstance['Id'], MatchInstance>();
 
   constructor(
     private readonly eventEmitter: EventEmitter2,
@@ -44,6 +45,7 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly participantsService: ParticipantsService,
     private readonly tilesService: TilesService,
     private readonly usersService: UsersService,
+    private readonly matchLogsService: MatchLogsService,
     private readonly gameSettingsService: GameSettingsService,
   ) {}
 
@@ -87,12 +89,19 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
         this.gameSettingsService,
         this.mapsService,
         this.participantsService,
+        this.matchLogsService,
         this.tilesService,
         this.usersService,
       );
       this.clients.set(client.id, { userId, matchInstance });
       this.matches.set(matchId, matchInstance);
-      await matchInstance.init();
+      try {
+        await matchInstance.init();
+      } catch (e) {
+        this.logger.error(e);
+        client.disconnect();
+        return;
+      }
     } else {
       this.logger.verbose(
         `Match instance for client "${client.id}" found. Reusing...`,
@@ -139,7 +148,7 @@ export class MatchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
     matchInstance.disconnect(client, userId);
-    this.server.to(matchInstance.Match.id).emit(
+    this.server.to(matchInstance.Id).emit(
       ServerEvent.PLAYER_DISCONNECTED_FROM_MATCH,
       matchInstance.Participants.filter((p) => p.userId !== userId),
     );

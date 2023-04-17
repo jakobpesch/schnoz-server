@@ -49,7 +49,7 @@ export class TilesService {
     data: Prisma.TileUncheckedUpdateInput;
   }) {
     const { where, data } = params;
-    return await this.prisma.tile.update({
+    return this.prisma.tile.update({
       data,
       where,
       include: { unit: true },

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { GameSettingsService } from '../game-settings/game-settings.service';
 import { MapsService } from '../maps/maps.service';
+import { MatchLogsService } from '../match-logs/match-logs.service';
 import { ParticipantsService } from '../participants/participants.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TilesService } from '../tiles/tiles.service';
@@ -18,6 +19,7 @@ import { MatchesService } from './matches.service';
     GameSettingsService,
     TilesService,
     UsersService,
+    MatchLogsService,
   ],
 })
 export class MatchesModule {}

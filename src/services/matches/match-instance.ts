@@ -1,4 +1,3 @@
-import { NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   GameSettings,
@@ -6,7 +5,6 @@ import {
   Match,
   MatchStatus,
   Participant,
-  Prisma,
   Tile,
   Unit,
   UnitConstellation,
@@ -34,6 +32,7 @@ import {
 } from 'src/utils/coordinateUtils';
 import { GameSettingsService } from '../game-settings/game-settings.service';
 import { MapsService } from '../maps/maps.service';
+import { MatchLogsService } from '../match-logs/match-logs.service';
 import { ParticipantsService } from '../participants/participants.service';
 import { TilesService } from '../tiles/tiles.service';
 import { UsersService } from '../users/users.service';
@@ -77,12 +76,13 @@ export class MatchInstance {
   private turnTimer: NodeJS.Timeout;
 
   constructor(
-    private readonly id: Match['id'],
+    public readonly Id: Match['id'],
     private readonly eventEmitter: EventEmitter2,
     private readonly matchesService: MatchesService,
     private readonly gameSettingsService: GameSettingsService,
     private readonly mapsService: MapsService,
     private readonly participantsService: ParticipantsService,
+    private readonly matchLogService: MatchLogsService,
     private readonly tilesService: TilesService,
     private readonly usersService: UsersService,
   ) {}
@@ -96,20 +96,20 @@ export class MatchInstance {
   }
 
   private async sync() {
-    this.match = await this.matchesService.findOne({ id: this.id });
+    this.match = await this.matchesService.findOne({ id: this.Id });
     this.gameSettings = await this.gameSettingsService.findOne({
-      matchId: this.id,
+      matchId: this.Id,
     });
     const participants = await this.participantsService.findMany({
-      where: { matchId: this.id },
+      where: { matchId: this.Id },
       orderBy: { playerNumber: 'asc' },
     });
     if (participants.length === 0) {
-      throw new Error(`No player in match with id ${this.id}`);
+      throw new Error(`No player in match with id ${this.Id}`);
     }
     this.participants = participants;
 
-    this.map = await this.mapsService.findOne({ matchId: this.id });
+    this.map = await this.mapsService.findOne({ matchId: this.Id });
     if (this.map) {
       this.tilesWithUnits = await this.tilesService.findMany({
         where: { mapId: this.map.id },
@@ -123,7 +123,7 @@ export class MatchInstance {
 
     if (!this.participants) {
       throw new Error(
-        `User with id ${userId} is no participant in match ${this.id}`,
+        `User with id ${userId} is no participant in match ${this.Id}`,
       );
     }
     const userIsParticipant = this.participants.some(
@@ -131,14 +131,14 @@ export class MatchInstance {
     );
     if (!userIsParticipant) {
       throw new Error(
-        `User with id ${userId} is no participant in match ${this.id}`,
+        `User with id ${userId} is no participant in match ${this.Id}`,
       );
     }
     const existingSocket = this.sockets.get(userId);
     if (existingSocket) {
       existingSocket.disconnect();
     }
-    socket.join(this.id);
+    socket.join(this.Id);
     this.sockets.set(userId, socket);
     // console.log(this.sockets.keys());
     // if (this.sockets.size === 2) {
@@ -154,6 +154,10 @@ export class MatchInstance {
     this.participants = this.participants.filter(
       (player) => player.id !== participantId,
     );
+    await this.matchLogService.create({
+      matchId: this.Id,
+      message: `Player ${participantId} was kicked from the match.`,
+    });
   }
 
   private nextTurn() {
@@ -172,7 +176,7 @@ export class MatchInstance {
   }
 
   public disconnect(socket: Socket, userId: User['id']) {
-    socket.leave(this.id);
+    socket.leave(this.Id);
     this.sockets.delete(userId);
   }
 
@@ -180,7 +184,7 @@ export class MatchInstance {
     settings: Omit<Partial<GameSettings>, 'id' | 'matchId'>,
   ) {
     this.gameSettings = await this.gameSettingsService.update({
-      where: { matchId: this.id },
+      where: { matchId: this.Id },
       data: settings,
     });
     return this.gameSettings;
@@ -255,6 +259,17 @@ export class MatchInstance {
         startedAt,
         activePlayerId,
         turn,
+        logs: {
+          createMany: {
+            data: [
+              { message: `Match started by ${userId}` },
+              {
+                message: `Game settings`,
+                data: JSON.stringify(this.gameSettings),
+              },
+            ],
+          },
+        },
       },
     });
 
@@ -443,7 +458,21 @@ export class MatchInstance {
           : {}),
       },
     });
-    return { updatedMatch: this.match, updatedTilesWithUnits, updatedPlayers };
+    const response = {
+      updatedMatch: this.match,
+      updatedTilesWithUnits,
+      updatedPlayers,
+    };
+    this.matchLogService.create({
+      matchId: this.Id,
+      message: `Player  ${
+        this.activePlayer.id
+      } placed units on tiles ${translatedCoordinates.map(
+        ([row, col]) => `(${row},${col})`,
+      )}`,
+      data: JSON.stringify(response),
+    });
+    return response;
   }
 
   private async changeTurn(args: any) {
